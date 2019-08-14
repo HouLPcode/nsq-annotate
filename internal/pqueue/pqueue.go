@@ -7,11 +7,12 @@ import (
 type Item struct {
 	Value    interface{}
 	Priority int64
-	Index    int
+	Index    int // todo 索引，用来加速？？？
 }
 
 // this is a priority queue as implemented by a min heap
 // ie. the 0th element is the *lowest* value
+// 小堆， 按照Priority排序
 type PriorityQueue []*Item
 
 func New(capacity int) PriorityQueue {
@@ -60,6 +61,7 @@ func (pq *PriorityQueue) Pop() interface{} {
 	return item
 }
 
+// pop堆顶元素，要求堆顶的Priority不大于max
 func (pq *PriorityQueue) PeekAndShift(max int64) (*Item, int64) {
 	if pq.Len() == 0 {
 		return nil, 0

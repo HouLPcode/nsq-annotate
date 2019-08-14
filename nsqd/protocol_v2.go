@@ -104,7 +104,7 @@ func (p *protocolV2) IOLoop(conn net.Conn) error {
 			continue
 		}
 
-		if response != nil {// 执行成功，发送响应消息
+		if response != nil { // 执行成功，发送响应消息
 			err = p.Send(client, frameTypeResponse, response)
 			if err != nil {
 				err = fmt.Errorf("failed to send response - %s", err)

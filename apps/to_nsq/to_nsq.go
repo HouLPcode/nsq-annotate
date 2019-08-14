@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	topic     = flag.String("topic", "", "NSQ topic to publish to")
+	topic = flag.String("topic", "", "NSQ topic to publish to")
 	// 分隔符
 	delimiter = flag.String("delimiter", "\n", "character to split input from stdin")
 
@@ -79,7 +79,7 @@ func main() {
 	}
 
 	throttleEnabled := *rate >= 1 // 0 表示不限制消息的发送
-	balance := int64(1) // 令牌桶限流算法
+	balance := int64(1)           // 令牌桶限流算法
 	// avoid divide by 0 if !throttleEnabled
 	var interval time.Duration
 	if throttleEnabled {

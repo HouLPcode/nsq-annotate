@@ -213,7 +213,7 @@ func (p *program) Start() error {
 
 	var cfg config
 	configFile := flagSet.Lookup("config").Value.String()
-	if configFile != "" {// 配置文件解析
+	if configFile != "" { // 配置文件解析
 		_, err := toml.DecodeFile(configFile, &cfg)
 		if err != nil {
 			log.Fatalf("ERROR: failed to load config file %s - %s", configFile, err.Error())

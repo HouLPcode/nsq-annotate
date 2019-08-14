@@ -116,7 +116,7 @@ func (n *NSQD) lookupLoop() {
 					n.logf(LOG_ERROR, "LOOKUPD(%s): %s - %s", lookupPeer, cmd, err)
 				}
 			}
-		case val := <-n.notifyChan:
+		case val := <-n.notifyChan: // 无缓冲
 			var cmd *nsq.Command
 			var branch string
 

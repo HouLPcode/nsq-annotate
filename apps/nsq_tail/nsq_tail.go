@@ -54,6 +54,7 @@ func (th *TailHandler) HandleMessage(m *nsq.Message) error {
 		}
 	}
 
+	// 从消息中读取数据内容
 	_, err := os.Stdout.Write(m.Body)
 	if err != nil {
 		log.Fatalf("ERROR: failed to write to os.Stdout - %s", err)
@@ -68,6 +69,23 @@ func (th *TailHandler) HandleMessage(m *nsq.Message) error {
 	return nil
 }
 
+// 消费者
+// 使用流程
+
+//func (){
+//	cfg := nsq.NewConfig()
+//  1. 创建消费者
+//	consumer, err := nsq.NewConsumer(topics, channel, cfg)
+//  2. 绑定消息处理函数，此处是一个实现了Handler接口的结构
+//	consumer.AddHandler(&TailHandler{}) // Handler interface{}
+//  3. 通过lookup连接到nsqd网络
+//	err = consumer.ConnectToNSQLookupds(lookupdHTTPAddrs) // 或者err = consumer.ConnectToNSQDs(nsqdTCPAddrs)，不建议使用？？？
+//	wait...
+//	consumer.Stop()
+//  <-consumer.StopChan // 消费者stop后需要的操作
+//}
+
+// 必须指定的参数 lookupdHTTPAddrs或nsqdTCPAddrs，topics，
 func main() {
 	cfg := nsq.NewConfig()
 
@@ -108,19 +126,19 @@ func main() {
 	consumers := []*nsq.Consumer{}
 	for i := 0; i < len(topics); i += 1 {
 		log.Printf("Adding consumer for topic: %s\n", topics[i])
-
+		// 创建消费者，绑定topic，但是channel是自己指定的
 		consumer, err := nsq.NewConsumer(topics[i], *channel, cfg)
 		if err != nil {
 			log.Fatal(err)
 		}
-
+		// 添加处理函数
 		consumer.AddHandler(&TailHandler{topicName: topics[i], totalMessages: *totalMessages})
-
+		// 连接，可以是空的
 		err = consumer.ConnectToNSQDs(nsqdTCPAddrs)
 		if err != nil {
 			log.Fatal(err)
 		}
-
+		// 连接。。。
 		err = consumer.ConnectToNSQLookupds(lookupdHTTPAddrs)
 		if err != nil {
 			log.Fatal(err)
@@ -130,7 +148,7 @@ func main() {
 	}
 
 	<-sigChan
-
+	// 关闭消费者的步骤 1. stop 2. 读取consumer.StopChan通道
 	for _, consumer := range consumers {
 		consumer.Stop()
 	}

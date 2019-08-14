@@ -243,7 +243,7 @@ func (n *NSQD) Main() {
 
 	tcpServer := &tcpServer{ctx: ctx}
 	n.waitGroup.Wrap(func() { // 创建新的协程监听tcp
-							// 监听器       处理器      日志
+		// 监听器       处理器      日志
 		protocol.TCPServer(n.tcpListener, tcpServer, n.logf)
 	})
 	httpServer := newHTTPServer(ctx, false, n.getOpts().TLSRequired == TLSRequired)
@@ -258,7 +258,7 @@ func (n *NSQD) Main() {
 	}
 
 	n.waitGroup.Wrap(n.queueScanLoop) // 扫描和处理InFlightQueue和DeferredQueue
-	n.waitGroup.Wrap(n.lookupLoop) // 保持与nsqlookupd心跳连接，上报信息
+	n.waitGroup.Wrap(n.lookupLoop)    // 保持与nsqlookupd心跳连接，上报信息
 	if n.getOpts().StatsdAddress != "" {
 		n.waitGroup.Wrap(n.statsdLoop) // 状态统计服务
 	}
@@ -584,17 +584,20 @@ func (n *NSQD) Notify(v interface{}) {
 	// since the in-memory metadata is incomplete,
 	// should not persist metadata while loading it.
 	// nsqd will call `PersistMetadata` it after loading
+	// 由于内存中的元数据不完整，因此在加载元数据时不应该保留元数据。 nsqd将在加载后调用它“PersistMetadata”
 	persist := atomic.LoadInt32(&n.isLoading) == 0
+	// 开启一个单独线程，通过调用PersistMetadata加载元数据
 	n.waitGroup.Wrap(func() {
 		// by selecting on exitChan we guarantee that
 		// we do not block exit, see issue #123
+		// 通过select机制保证exit不阻塞
 		select {
 		case <-n.exitChan:
-		case n.notifyChan <- v:
+		case n.notifyChan <- v: // 无缓冲
 			if !persist {
 				return
 			}
-			n.Lock()
+			n.Lock() // 加锁
 			err := n.PersistMetadata()
 			if err != nil {
 				n.logf(LOG_ERROR, "failed to persist metadata - %s", err)
