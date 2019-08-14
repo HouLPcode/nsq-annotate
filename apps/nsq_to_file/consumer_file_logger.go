@@ -15,6 +15,7 @@ func newConsumerFileLogger(topic string, cfg *nsq.Config) (*ConsumerFileLogger, 
 		return nil, err
 	}
 
+	// 创建消费者
 	c, err := nsq.NewConsumer(topic, *channel, cfg)
 	if err != nil {
 		return nil, err

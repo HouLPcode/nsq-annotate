@@ -89,6 +89,7 @@ func New(opts *Options) *NSQD {
 		optsNotificationChan: make(chan struct{}, 1),
 		dl:                   dirlock.New(dataPath),
 	}
+	// 带超时时间的http
 	httpcli := http_api.NewClient(nil, opts.HTTPClientConnectTimeout, opts.HTTPClientRequestTimeout)
 	n.ci = clusterinfo.New(n.logf, httpcli)
 
@@ -215,20 +216,23 @@ func (n *NSQD) GetStartTime() time.Time {
 	return n.startTime
 }
 
+// nsqd的真正主流程
 func (n *NSQD) Main() {
 	var err error
 	ctx := &context{n}
-
+	// 开启监听TCP端口
 	n.tcpListener, err = net.Listen("tcp", n.getOpts().TCPAddress)
 	if err != nil {
 		n.logf(LOG_FATAL, "listen (%s) failed - %s", n.getOpts().TCPAddress, err)
 		os.Exit(1)
 	}
+	// 开启监听http端口
 	n.httpListener, err = net.Listen("tcp", n.getOpts().HTTPAddress)
 	if err != nil {
 		n.logf(LOG_FATAL, "listen (%s) failed - %s", n.getOpts().HTTPAddress, err)
 		os.Exit(1)
 	}
+	// TLS 和 https支持
 	if n.tlsConfig != nil && n.getOpts().HTTPSAddress != "" {
 		n.httpsListener, err = tls.Listen("tcp", n.getOpts().HTTPSAddress, n.tlsConfig)
 		if err != nil {
@@ -238,24 +242,25 @@ func (n *NSQD) Main() {
 	}
 
 	tcpServer := &tcpServer{ctx: ctx}
-	n.waitGroup.Wrap(func() {
+	n.waitGroup.Wrap(func() { // 创建新的协程监听tcp
+							// 监听器       处理器      日志
 		protocol.TCPServer(n.tcpListener, tcpServer, n.logf)
 	})
 	httpServer := newHTTPServer(ctx, false, n.getOpts().TLSRequired == TLSRequired)
-	n.waitGroup.Wrap(func() {
+	n.waitGroup.Wrap(func() { // 创建新的协程监听http
 		http_api.Serve(n.httpListener, httpServer, "HTTP", n.logf)
 	})
 	if n.tlsConfig != nil && n.getOpts().HTTPSAddress != "" {
 		httpsServer := newHTTPServer(ctx, true, true)
-		n.waitGroup.Wrap(func() {
+		n.waitGroup.Wrap(func() { // 创建新的协程监听https
 			http_api.Serve(n.httpsListener, httpsServer, "HTTPS", n.logf)
 		})
 	}
 
-	n.waitGroup.Wrap(n.queueScanLoop)
-	n.waitGroup.Wrap(n.lookupLoop)
+	n.waitGroup.Wrap(n.queueScanLoop) // 扫描和处理InFlightQueue和DeferredQueue
+	n.waitGroup.Wrap(n.lookupLoop) // 保持与nsqlookupd心跳连接，上报信息
 	if n.getOpts().StatsdAddress != "" {
-		n.waitGroup.Wrap(n.statsdLoop)
+		n.waitGroup.Wrap(n.statsdLoop) // 状态统计服务
 	}
 }
 
@@ -363,6 +368,7 @@ func (n *NSQD) LoadMetadata() error {
 	return nil
 }
 
+// 重启的时候保存数据
 func (n *NSQD) PersistMetadata() error {
 	// persist metadata about what topics/channels we have, across restarts
 	fileName := newMetadataFile(n.getOpts())
@@ -481,17 +487,18 @@ func (n *NSQD) Exit() {
 
 // GetTopic performs a thread safe operation
 // to return a pointer to a Topic object (potentially new)
+// 获取topic，不存在的话会自动创建
+// 创建topic会查询lookup，找到所有该topic的channel
 func (n *NSQD) GetTopic(topicName string) *Topic {
 	// most likely, we already have this topic, so try read lock first.
 	n.RLock()
 	t, ok := n.topicMap[topicName]
 	n.RUnlock()
 	if ok {
-		return t
+		return t // 已有的topic，直接返回
 	}
 
 	n.Lock()
-
 	t, ok = n.topicMap[topicName]
 	if ok {
 		n.Unlock()
@@ -500,6 +507,7 @@ func (n *NSQD) GetTopic(topicName string) *Topic {
 	deleteCallback := func(t *Topic) {
 		n.DeleteExistingTopic(t.name)
 	}
+	// 不存在的topic，则创建
 	t = NewTopic(topicName, &context{n}, deleteCallback)
 	n.topicMap[topicName] = t
 
@@ -522,7 +530,7 @@ func (n *NSQD) GetTopic(topicName string) *Topic {
 			n.logf(LOG_WARN, "failed to query nsqlookupd for channels to pre-create for topic %s - %s", t.name, err)
 		}
 		for _, channelName := range channelNames {
-			if strings.HasSuffix(channelName, "#ephemeral") {
+			if strings.HasSuffix(channelName, "#ephemeral") { // 临时后缀的通道
 				continue // do not create ephemeral channel with no consumer client
 			}
 			t.GetChannel(channelName)

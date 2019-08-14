@@ -20,9 +20,10 @@ import (
 const maxTimeout = time.Hour
 
 const (
-	frameTypeResponse int32 = 0
-	frameTypeError    int32 = 1
-	frameTypeMessage  int32 = 2
+	// 帧类型
+	frameTypeResponse int32 = 0 // 响应
+	frameTypeError    int32 = 1 // 错误
+	frameTypeMessage  int32 = 2 // 消息
 )
 
 var separatorBytes = []byte(" ")
@@ -45,8 +46,9 @@ func (p *protocolV2) IOLoop(conn net.Conn) error {
 	// to guarantee that it gets a chance to initialize
 	// goroutine local state derived from client attributes
 	// and avoid a potential race with IDENTIFY (where a client
-	// could have changed or disabled said attributes)
-	messagePumpStartedChan := make(chan bool)
+	// could have changed or disabled said attributes) ？？？？？？？？？？？
+	// 同步messagePump的启动，以保证它有机会初始化从客户端属性派生的goroutine本地状态，并避免与IDENTIFY的潜在竞争（客户端可能已更改或禁用所述属性）
+	messagePumpStartedChan := make(chan bool) // 这个messagePump 名字很形象, 把要发送给client 的messgae 从 缓存池子里Pump 抽出来 做具体的发送
 	go p.messagePump(client, messagePumpStartedChan)
 	<-messagePumpStartedChan
 
@@ -59,7 +61,8 @@ func (p *protocolV2) IOLoop(conn net.Conn) error {
 
 		// ReadSlice does not allocate new space for the data each request
 		// ie. the returned slice is only valid until the next call to it
-		line, err = client.Reader.ReadSlice('\n')
+		// ReadSlice不为每个请求分配新的空间。数据在下次调用前有效
+		line, err = client.Reader.ReadSlice('\n') // ReadSlice重复使用其内部缓冲区
 		if err != nil {
 			if err == io.EOF {
 				err = nil
@@ -70,24 +73,24 @@ func (p *protocolV2) IOLoop(conn net.Conn) error {
 		}
 
 		// trim the '\n'
-		line = line[:len(line)-1]
+		line = line[:len(line)-1] // 取消换行符
 		// optionally trim the '\r'
 		if len(line) > 0 && line[len(line)-1] == '\r' {
 			line = line[:len(line)-1]
 		}
-		params := bytes.Split(line, separatorBytes)
+		params := bytes.Split(line, separatorBytes) // 按空格切分
 
 		p.ctx.nsqd.logf(LOG_DEBUG, "PROTOCOL(V2): [%s] %s", client, params)
 
 		var response []byte
-		response, err = p.Exec(client, params)
+		response, err = p.Exec(client, params) // 执行命令
 		if err != nil {
 			ctx := ""
 			if parentErr := err.(protocol.ChildErr).Parent(); parentErr != nil {
 				ctx = " - " + parentErr.Error()
 			}
 			p.ctx.nsqd.logf(LOG_ERROR, "[%s] - %s%s", client, err, ctx)
-
+			// 命令执行失败，发送错误信息
 			sendErr := p.Send(client, frameTypeError, []byte(err.Error()))
 			if sendErr != nil {
 				p.ctx.nsqd.logf(LOG_ERROR, "[%s] - %s%s", client, sendErr, ctx)
@@ -101,7 +104,7 @@ func (p *protocolV2) IOLoop(conn net.Conn) error {
 			continue
 		}
 
-		if response != nil {
+		if response != nil {// 执行成功，发送响应消息
 			err = p.Send(client, frameTypeResponse, response)
 			if err != nil {
 				err = fmt.Errorf("failed to send response - %s", err)
@@ -163,14 +166,14 @@ func (p *protocolV2) Send(client *clientV2, frameType int32, data []byte) error 
 }
 
 func (p *protocolV2) Exec(client *clientV2, params [][]byte) ([]byte, error) {
-	if bytes.Equal(params[0], []byte("IDENTIFY")) {
+	if bytes.Equal(params[0], []byte("IDENTIFY")) { // 认证命令。IDENTIFY会影响TLSPolicy？？？？
 		return p.IDENTIFY(client, params)
 	}
 	err := enforceTLSPolicy(client, p, params[0])
 	if err != nil {
 		return nil, err
 	}
-	switch {
+	switch { // 支持的命令集
 	case bytes.Equal(params[0], []byte("FIN")):
 		return p.FIN(client, params)
 	case bytes.Equal(params[0], []byte("RDY")):
@@ -194,6 +197,7 @@ func (p *protocolV2) Exec(client *clientV2, params [][]byte) ([]byte, error) {
 	case bytes.Equal(params[0], []byte("AUTH")):
 		return p.AUTH(client, params)
 	}
+	// 返回命令无效错误
 	return nil, protocol.NewFatalClientErr(nil, "E_INVALID", fmt.Sprintf("invalid command %s", params[0]))
 }
 
@@ -754,6 +758,7 @@ func (p *protocolV2) NOP(client *clientV2, params [][]byte) ([]byte, error) {
 	return nil, nil
 }
 
+// 发布一个消息 参数格式   [PUB][topic][可选defer]
 func (p *protocolV2) PUB(client *clientV2, params [][]byte) ([]byte, error) {
 	var err error
 
@@ -777,23 +782,26 @@ func (p *protocolV2) PUB(client *clientV2, params [][]byte) ([]byte, error) {
 			fmt.Sprintf("PUB invalid message body size %d", bodyLen))
 	}
 
-	if int64(bodyLen) > p.ctx.nsqd.getOpts().MaxMsgSize {
+	if int64(bodyLen) > p.ctx.nsqd.getOpts().MaxMsgSize { //每次最多传输1M数据
 		return nil, protocol.NewFatalClientErr(nil, "E_BAD_MESSAGE",
 			fmt.Sprintf("PUB message too big %d > %d", bodyLen, p.ctx.nsqd.getOpts().MaxMsgSize))
 	}
 
+	// 读取数据
 	messageBody := make([]byte, bodyLen)
 	_, err = io.ReadFull(client.Reader, messageBody)
 	if err != nil {
 		return nil, protocol.NewFatalClientErr(err, "E_BAD_MESSAGE", "PUB failed to read message body")
 	}
 
+	// 校验client是否有权限PUB数据
 	if err := p.CheckAuth(client, "PUB", topicName, ""); err != nil {
 		return nil, err
 	}
 
 	topic := p.ctx.nsqd.GetTopic(topicName)
 	msg := NewMessage(topic.GenerateID(), messageBody)
+	// 发送消息
 	err = topic.PutMessage(msg)
 	if err != nil {
 		return nil, protocol.NewFatalClientErr(err, "E_PUB_FAILED", "PUB failed "+err.Error())

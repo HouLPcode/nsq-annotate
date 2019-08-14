@@ -46,7 +46,7 @@ type Options struct {
 	// msg and command options
 	MsgTimeout    time.Duration `flag:"msg-timeout"`
 	MaxMsgTimeout time.Duration `flag:"max-msg-timeout"`
-	MaxMsgSize    int64         `flag:"max-msg-size"`
+	MaxMsgSize    int64         `flag:"max-msg-size"` // 最大消息1M
 	MaxBodySize   int64         `flag:"max-body-size"`
 	MaxReqTimeout time.Duration `flag:"max-req-timeout"`
 	ClientTimeout time.Duration
@@ -121,10 +121,10 @@ func NewOptions() *Options {
 
 		MsgTimeout:    60 * time.Second,
 		MaxMsgTimeout: 15 * time.Minute,
-		MaxMsgSize:    1024 * 1024,
+		MaxMsgSize:    1024 * 1024, // 1M
 		MaxBodySize:   5 * 1024 * 1024,
 		MaxReqTimeout: 1 * time.Hour,
-		ClientTimeout: 60 * time.Second,
+		ClientTimeout: 60 * time.Second, //默认60S的心跳超时，来回各占一半，即30秒
 
 		MaxHeartbeatInterval:   60 * time.Second,
 		MaxRdyCount:            2500,

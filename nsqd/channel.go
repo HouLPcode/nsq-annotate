@@ -27,12 +27,13 @@ type Consumer interface {
 
 // Channel represents the concrete type for a NSQ channel (and also
 // implements the Queue interface)
-//
+// Channel表示NSQ通道的具体类型（并且还实现了Queue接口）
 // There can be multiple channels per topic, each with there own unique set
 // of subscribers (clients).
-//
+// 每个topic可以有多个通道，每个通道都有自己独特的订户组（客户端）。
 // Channels maintain all client and message metadata, orchestrating in-flight
 // messages, timeouts, requeuing, etc.
+// Channels维护所有客户端和消息元数据，编排正在进行的消息，超时，重新排队等。
 type Channel struct {
 	// 64bit atomic vars need to be first for proper alignment on 32bit platforms
 	requeueCount uint64

@@ -41,6 +41,7 @@ type httpServer struct {
 func newHTTPServer(ctx *context, tlsEnabled bool, tlsRequired bool) *httpServer {
 	log := http_api.Log(ctx.nsqd.logf)
 
+	// httprouter路由器
 	router := httprouter.New()
 	router.HandleMethodNotAllowed = true
 	router.PanicHandler = http_api.LogPanicHandler(ctx.nsqd.logf)
@@ -53,6 +54,7 @@ func newHTTPServer(ctx *context, tlsEnabled bool, tlsRequired bool) *httpServer 
 		router:      router,
 	}
 
+	// http 服务请求路由
 	router.Handle("GET", "/ping", http_api.Decorate(s.pingHandler, log, http_api.PlainText))
 	router.Handle("GET", "/info", http_api.Decorate(s.doInfo, log, http_api.V1))
 
@@ -67,11 +69,13 @@ func newHTTPServer(ctx *context, tlsEnabled bool, tlsRequired bool) *httpServer 
 	router.Handle("POST", "/topic/empty", http_api.Decorate(s.doEmptyTopic, log, http_api.V1))
 	router.Handle("POST", "/topic/pause", http_api.Decorate(s.doPauseTopic, log, http_api.V1))
 	router.Handle("POST", "/topic/unpause", http_api.Decorate(s.doPauseTopic, log, http_api.V1))
+
 	router.Handle("POST", "/channel/create", http_api.Decorate(s.doCreateChannel, log, http_api.V1))
 	router.Handle("POST", "/channel/delete", http_api.Decorate(s.doDeleteChannel, log, http_api.V1))
 	router.Handle("POST", "/channel/empty", http_api.Decorate(s.doEmptyChannel, log, http_api.V1))
 	router.Handle("POST", "/channel/pause", http_api.Decorate(s.doPauseChannel, log, http_api.V1))
 	router.Handle("POST", "/channel/unpause", http_api.Decorate(s.doPauseChannel, log, http_api.V1))
+
 	router.Handle("GET", "/config/:opt", http_api.Decorate(s.doConfig, log, http_api.V1))
 	router.Handle("PUT", "/config/:opt", http_api.Decorate(s.doConfig, log, http_api.V1))
 

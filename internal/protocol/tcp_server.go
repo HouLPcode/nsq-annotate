@@ -12,11 +12,12 @@ type TCPHandler interface {
 	Handle(net.Conn)
 }
 
+//   监听器       处理器      日志
 func TCPServer(listener net.Listener, handler TCPHandler, logf lg.AppLogFunc) {
 	logf(lg.INFO, "TCP: listening on %s", listener.Addr())
 
 	for {
-		clientConn, err := listener.Accept()
+		clientConn, err := listener.Accept() // 阻塞等待新的链接到来
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
 				logf(lg.WARN, "temporary Accept() failure - %s", err)
@@ -29,7 +30,7 @@ func TCPServer(listener net.Listener, handler TCPHandler, logf lg.AppLogFunc) {
 			}
 			break
 		}
-		go handler.Handle(clientConn)
+		go handler.Handle(clientConn) // 每个新连接创建goroutine处理
 	}
 
 	logf(lg.INFO, "TCP: closing %s", listener.Addr())

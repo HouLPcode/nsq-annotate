@@ -46,7 +46,7 @@ func NewTopic(topicName string, ctx *context, deleteCallback func(*Topic)) *Topi
 	t := &Topic{
 		name:              topicName,
 		channelMap:        make(map[string]*Channel),
-		memoryMsgChan:     make(chan *Message, ctx.nsqd.getOpts().MemQueueSize),
+		memoryMsgChan:     make(chan *Message, ctx.nsqd.getOpts().MemQueueSize), // 内存中的消息队列，缓存topic接收到的数据信息。默认1w个消息
 		startChan:         make(chan int, 1),
 		exitChan:          make(chan int),
 		channelUpdateChan: make(chan int),
@@ -176,7 +176,7 @@ func (t *Topic) DeleteExistingChannel(channelName string) error {
 func (t *Topic) PutMessage(m *Message) error {
 	t.RLock()
 	defer t.RUnlock()
-	if atomic.LoadInt32(&t.exitFlag) == 1 {
+	if atomic.LoadInt32(&t.exitFlag) == 1 { // topic退出
 		return errors.New("exiting")
 	}
 	err := t.put(m)
@@ -204,12 +204,14 @@ func (t *Topic) PutMessages(msgs []*Message) error {
 	return nil
 }
 
+// 将消息写入topic缓存，topic中缓存不够的话写入磁盘中
 func (t *Topic) put(m *Message) error {
 	select {
 	case t.memoryMsgChan <- m:
-	default:
-		b := bufferPoolGet()
-		err := writeMessageToBackend(b, m, t.backend)
+	default: 		// 内存中的消息条数超过限制，需要将消息写入磁盘
+		b := bufferPoolGet() // 缓存池
+		// 消息写入b， 然后从b写入 t.backend，b是一个中间缓存
+		err := writeMessageToBackend(b, m, t.backend) // t.backend, 在NewTopic函数中初始化, 是一个 DiskQueue，用来把消息写入磁盘
 		bufferPoolPut(b)
 		t.ctx.nsqd.SetHealth(err)
 		if err != nil {
@@ -228,6 +230,7 @@ func (t *Topic) Depth() int64 {
 
 // messagePump selects over the in-memory and backend queue and
 // writes messages to every channel for this topic
+// 从内存和磁盘（backend）读取消息，写入通道channel中
 func (t *Topic) messagePump() {
 	var msg *Message
 	var buf []byte
@@ -236,7 +239,7 @@ func (t *Topic) messagePump() {
 	var memoryMsgChan chan *Message
 	var backendChan chan []byte
 
-	// do not pass messages before Start(), but avoid blocking Pause() or GetChannel()
+	// do not pass messages before Start(), but avoid blocking Pause() or GetChannel()、
 	for {
 		select {
 		case <-t.channelUpdateChan:
@@ -249,6 +252,7 @@ func (t *Topic) messagePump() {
 		}
 		break
 	}
+	// 阻塞等待数据，startChan中有数据后继续下面的操作
 	t.RLock()
 	for _, c := range t.channelMap {
 		chans = append(chans, c)

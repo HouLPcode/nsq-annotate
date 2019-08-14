@@ -31,6 +31,8 @@ import (
 //   4. Get() value (if Getter)
 //   5. Options struct default value
 //
+// 将 flag，cfg 中的配置整合到options结构体中
+// 配置优先级 命令行 > 配置文件 > 默认值
 func Resolve(options interface{}, flagSet *flag.FlagSet, cfg map[string]interface{}) {
 	val := reflect.ValueOf(options).Elem()
 	typ := val.Type()

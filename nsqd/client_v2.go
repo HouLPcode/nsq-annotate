@@ -99,6 +99,7 @@ type clientV2 struct {
 	Deflate int32
 
 	// re-usable buffer for reading the 4-byte lengths off the wire
+	// 可重复使用的缓冲区，用于读取线路上的4字节长度
 	lenBuf   [4]byte
 	lenSlice []byte
 
@@ -118,11 +119,11 @@ func newClientV2(id int64, conn net.Conn, ctx *context) *clientV2 {
 
 		Conn: conn,
 
-		Reader: bufio.NewReaderSize(conn, defaultBufferSize),
+		Reader: bufio.NewReaderSize(conn, defaultBufferSize), // 默认16K读写缓冲区
 		Writer: bufio.NewWriterSize(conn, defaultBufferSize),
 
-		OutputBufferSize:    defaultBufferSize,
-		OutputBufferTimeout: 250 * time.Millisecond,
+		OutputBufferSize:    defaultBufferSize, // 16K输出缓冲区
+		OutputBufferTimeout: 250 * time.Millisecond, // 25ms
 
 		MsgTimeout: ctx.nsqd.getOpts().MsgTimeout,
 
@@ -139,7 +140,7 @@ func newClientV2(id int64, conn net.Conn, ctx *context) *clientV2 {
 		SubEventChan:      make(chan *Channel, 1),
 		IdentifyEventChan: make(chan identifyEvent, 1),
 
-		// heartbeats are client configurable but default to 30s
+		// heartbeats are client configurable but default to 30s 默认心跳时间30秒，可以在客户端配置
 		HeartbeatInterval: ctx.nsqd.getOpts().ClientTimeout / 2,
 	}
 	c.lenSlice = c.lenBuf[:]

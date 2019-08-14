@@ -33,12 +33,14 @@ func newTopicDiscoverer(cfg *nsq.Config,
 	}
 }
 
+// 遍历所有的topic，为每个topic创建新的协程，处理消息
 func (t *TopicDiscoverer) updateTopics(topics []string, pattern string) {
 	for _, topic := range topics {
 		if _, ok := t.topics[topic]; ok {
 			continue
 		}
 
+		// 过滤出来满足pattern模式的主题
 		if !allowTopicName(pattern, topic) {
 			log.Printf("skipping topic %s (doesn't match pattern %s)", topic, pattern)
 			continue

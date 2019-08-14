@@ -14,6 +14,7 @@ import (
 )
 
 // A custom http.Transport with support for deadline timeouts
+// 带超时时间
 func NewDeadlineTransport(connectTimeout time.Duration, requestTimeout time.Duration) *http.Transport {
 	// arbitrary values copied from http.DefaultTransport
 	transport := &http.Transport{

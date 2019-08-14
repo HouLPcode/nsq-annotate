@@ -42,6 +42,11 @@ type guidFactory struct {
 	lastID        guid
 }
 
+// 用来生成messageID, 用法如下
+//	factory := &guidFactory{}
+//	id, err := factory.NewGUID()
+//	messageID := id.Hex()
+
 func NewGUIDFactory(nodeID int64) *guidFactory {
 	return &guidFactory{
 		nodeID: nodeID,

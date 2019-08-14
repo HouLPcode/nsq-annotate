@@ -197,6 +197,7 @@ func (p *program) Init(env svc.Environment) error {
 	return nil
 }
 
+// 非阻塞
 func (p *program) Start() error {
 	opts := nsqd.NewOptions()
 
@@ -212,7 +213,7 @@ func (p *program) Start() error {
 
 	var cfg config
 	configFile := flagSet.Lookup("config").Value.String()
-	if configFile != "" {
+	if configFile != "" {// 配置文件解析
 		_, err := toml.DecodeFile(configFile, &cfg)
 		if err != nil {
 			log.Fatalf("ERROR: failed to load config file %s - %s", configFile, err.Error())
@@ -220,9 +221,10 @@ func (p *program) Start() error {
 	}
 	cfg.Validate()
 
-	options.Resolve(opts, flagSet, cfg)
+	options.Resolve(opts, flagSet, cfg) // 整合配置项
 	nsqd := nsqd.New(opts)
 
+	// 重启的时候处理的数据
 	err := nsqd.LoadMetadata()
 	if err != nil {
 		log.Fatalf("ERROR: %s", err.Error())
@@ -231,6 +233,7 @@ func (p *program) Start() error {
 	if err != nil {
 		log.Fatalf("ERROR: failed to persist metadata - %s", err.Error())
 	}
+
 	nsqd.Main()
 
 	p.nsqd = nsqd
