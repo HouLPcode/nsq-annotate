@@ -26,18 +26,21 @@ const (
 
 type identifyDataV2 struct {
 	ClientID            string `json:"client_id"`
-	Hostname            string `json:"hostname"`
-	HeartbeatInterval   int    `json:"heartbeat_interval"`
-	OutputBufferSize    int    `json:"output_buffer_size"`
-	OutputBufferTimeout int    `json:"output_buffer_timeout"`
-	FeatureNegotiation  bool   `json:"feature_negotiation"`
+	Hostname            string `json:"hostname"` //客户端的主机名
+	HeartbeatInterval   int    `json:"heartbeat_interval"` // 心跳的毫秒数.有效范围: 1000 <= heartbeat_interval <= configured_max (-1 禁用心跳)
+	OutputBufferSize    int    `json:"output_buffer_size"`  // nsq-->client 缓冲区
+	OutputBufferTimeout int    `json:"output_buffer_timeout"` //  超时后，nsqd 缓冲的数据都会刷新到此客户端
+	FeatureNegotiation  bool   `json:"feature_negotiation"` // 特征谈判???
 	TLSv1               bool   `json:"tls_v1"`
+
+	// 压缩算法
 	Deflate             bool   `json:"deflate"`
 	DeflateLevel        int    `json:"deflate_level"`
 	Snappy              bool   `json:"snappy"`
-	SampleRate          int32  `json:"sample_rate"`
+
+	SampleRate          int32  `json:"sample_rate"` // 投递此次连接的消息接收率
 	UserAgent           string `json:"user_agent"`
-	MsgTimeout          int    `json:"msg_timeout"`
+	MsgTimeout          int    `json:"msg_timeout"` // 服务端发送消息给客户端的超时时间
 }
 
 type identifyEvent struct {
@@ -49,7 +52,7 @@ type identifyEvent struct {
 
 type clientV2 struct {
 	// 64bit atomic vars need to be first for proper alignment on 32bit platforms
-	ReadyCount    int64
+	ReadyCount    int64 // 客户端准备好，可以接收这么多消息
 	InFlightCount int64
 	MessageCount  uint64
 	FinishCount   uint64

@@ -36,9 +36,9 @@ type Consumer interface {
 // Channels维护所有客户端和消息元数据，编排正在进行的消息，超时，重新排队等。
 type Channel struct {
 	// 64bit atomic vars need to be first for proper alignment on 32bit platforms
-	requeueCount uint64 // ？？？
+	requeueCount uint64 // ？？？requeue次数？？？
 	messageCount uint64 // 接受到的消息总数
-	timeoutCount uint64 // 延迟的消息总数
+	timeoutCount uint64 // 延迟的消息总数 在inflight中消息放入内存channel中的时候++
 
 	sync.RWMutex
 
@@ -67,10 +67,13 @@ type Channel struct {
 	// 线程安全的操作，
 	// TODO 注意，message和PQ中的消息不是原子的操作，会有漏洞吗？？？
 	// 此处的消息到期后会转移到memoryMsgChan中
+	// wait for the specified timeout and requeue a message
 	deferredMessages map[MessageID]*pqueue.Item // 此处的消息是map缓存的，无序。此处的map可能是用来去重的？？？？？？？
 	deferredPQ       pqueue.PriorityQueue // 此处用小堆结构缓存延时消息，最先到期的消息在堆顶
 	deferredMutex    sync.Mutex
 
+	// inflight的消息会根据有没有延时，决定转入defer还是内存channel中
+	// 这是要直接发送给客户端的数据
 	inFlightMessages map[MessageID]*Message
 	inFlightPQ       inFlightPqueue
 	inFlightMutex    sync.Mutex
@@ -336,7 +339,9 @@ func (c *Channel) PutMessageDeferred(msg *Message, timeout time.Duration) {
 	c.StartDeferredTimeout(msg, timeout)
 }
 
-// TouchMessage resets the timeout for an in-flight message 。TouchMessage重置正在进行的消息的超时
+// TouchMessage resets the timeout for an in-flight message 。
+// 更新 infer中消息延时时间，从当前时间再延时clientMsgTimeout
+// 重置传播途中的消息超时时间
 func (c *Channel) TouchMessage(clientID int64, id MessageID, clientMsgTimeout time.Duration) error {
 	msg, err := c.popInFlightMessage(clientID, id)
 	if err != nil {
@@ -362,12 +367,14 @@ func (c *Channel) TouchMessage(clientID int64, id MessageID, clientMsgTimeout ti
 
 // FinishMessage successfully discards an in-flight message
 // 安全的删除 in-flight message
+// 删除 InFlight map 和 堆中的该消息
 func (c *Channel) FinishMessage(clientID int64, id MessageID) error {
 	msg, err := c.popInFlightMessage(clientID, id)
 	if err != nil {
 		return err
 	}
 	c.removeFromInFlightPQ(msg)
+	// TODO 这里是干嘛用的？？？
 	if c.e2eProcessingLatencyStream != nil {
 		c.e2eProcessingLatencyStream.Insert(msg.Timestamp)
 	}
@@ -380,6 +387,7 @@ func (c *Channel) FinishMessage(clientID int64, id MessageID) error {
 // `timeoutMs`  > 0 - asynchronously wait for the specified timeout
 //     and requeue a message (aka "deferred requeue")
 //
+// 从 inflight中取出消息， 有延时则放入defer中，没有直接放入内存channel中
 func (c *Channel) RequeueMessage(clientID int64, id MessageID, timeout time.Duration) error {
 	// remove from inflight first
 	msg, err := c.popInFlightMessage(clientID, id)
@@ -387,6 +395,7 @@ func (c *Channel) RequeueMessage(clientID int64, id MessageID, timeout time.Dura
 		return err
 	}
 	c.removeFromInFlightPQ(msg)
+	// 更新requeueCount计数
 	atomic.AddUint64(&c.requeueCount, 1)
 
 	if timeout == 0 {
@@ -432,6 +441,7 @@ func (c *Channel) RemoveClient(clientID int64) {
 	}
 }
 
+// 构建消息，放入inflight map 和 堆中
 func (c *Channel) StartInFlightTimeout(msg *Message, clientID int64, timeout time.Duration) error {
 	now := time.Now()
 	msg.clientID = clientID
@@ -444,7 +454,7 @@ func (c *Channel) StartInFlightTimeout(msg *Message, clientID int64, timeout tim
 	c.addToInFlightPQ(msg)
 	return nil
 }
-
+// 构建消息，放入 defer map 和 堆中
 func (c *Channel) StartDeferredTimeout(msg *Message, timeout time.Duration) error {
 	absTs := time.Now().Add(timeout).UnixNano()
 	item := &pqueue.Item{Value: msg, Priority: absTs}
@@ -458,6 +468,7 @@ func (c *Channel) StartDeferredTimeout(msg *Message, timeout time.Duration) erro
 }
 
 // pushInFlightMessage atomically adds a message to the in-flight dictionary
+// 原子性的将msg插入inFlight map中，有去重效果
 func (c *Channel) pushInFlightMessage(msg *Message) error {
 	c.inFlightMutex.Lock()
 	_, ok := c.inFlightMessages[msg.ID]
@@ -471,6 +482,7 @@ func (c *Channel) pushInFlightMessage(msg *Message) error {
 }
 
 // popInFlightMessage atomically removes a message from the in-flight dictionary
+// 从inflight map 中取出msgID的消息，校验clientID
 func (c *Channel) popInFlightMessage(clientID int64, id MessageID) (*Message, error) {
 	c.inFlightMutex.Lock()
 	msg, ok := c.inFlightMessages[id]
@@ -493,6 +505,7 @@ func (c *Channel) addToInFlightPQ(msg *Message) {
 	c.inFlightMutex.Unlock()
 }
 
+// 从堆中删除该消息
 func (c *Channel) removeFromInFlightPQ(msg *Message) {
 	c.inFlightMutex.Lock()
 	if msg.index == -1 {
@@ -541,7 +554,7 @@ func (c *Channel) addToDeferredPQ(item *pqueue.Item) {
 	c.deferredMutex.Unlock()
 }
 
-// 将所有小于t的消息从deferredPQ和DeferredMessage中移除，存储内存channel中（memoryMsgChan）
+// 将所有小于t的消息从deferredPQ和DeferredMessage中移除，存储到内存channel中（memoryMsgChan）
 func (c *Channel) processDeferredQueue(t int64) bool {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
@@ -575,7 +588,8 @@ func (c *Channel) processDeferredQueue(t int64) bool {
 exit:
 	return dirty
 }
-
+// 将所有小于t的消息从infligfht map 和 堆中取出消息，放入内存channel中。
+// 调用了一次client.TimedOutMessage()，不知道时做什么用的
 func (c *Channel) processInFlightQueue(t int64) bool {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
@@ -599,13 +613,16 @@ func (c *Channel) processInFlightQueue(t int64) bool {
 		if err != nil {
 			goto exit
 		}
+		// 此处增加timeoutCount计数
 		atomic.AddUint64(&c.timeoutCount, 1)
 		c.RLock()
 		client, ok := c.clients[msg.clientID]
 		c.RUnlock()
 		if ok {
+			// TODO 这是什么操作？？？
 			client.TimedOutMessage()
 		}
+		// 放入内存 channel 中
 		c.put(msg)
 	}
 

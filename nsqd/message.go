@@ -22,10 +22,10 @@ type Message struct {
 	Attempts  uint16
 
 	// for in-flight handling
-	deliveryTS time.Time
-	clientID   int64
-	pri        int64
-	index      int
+	deliveryTS time.Time // 当前时间
+	clientID   int64 // 客户端id？？？什么时候存入的？？？？
+	pri        int64 // 当前时间+deferred延迟时间
+	index      int // 索引？？？
 	deferred   time.Duration // 延迟时间
 }
 

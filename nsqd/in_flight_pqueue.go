@@ -1,5 +1,6 @@
 package nsqd
-
+// 这个堆是自己实现的？？？？？？取消interfae{}支持来加速？？？
+// 小堆
 type inFlightPqueue []*Message
 
 func newInFlightPqueue(capacity int) inFlightPqueue {
@@ -15,7 +16,8 @@ func (pq inFlightPqueue) Swap(i, j int) {
 func (pq *inFlightPqueue) Push(x *Message) {
 	n := len(*pq)
 	c := cap(*pq)
-	if n+1 > c {
+	// 没有采用append的方式，也是为了加速？？？？？
+	if n+1 > c { // 两倍扩容
 		npq := make(inFlightPqueue, n, c*2)
 		copy(npq, *pq)
 		*pq = npq
@@ -42,6 +44,7 @@ func (pq *inFlightPqueue) Pop() *Message {
 	return x
 }
 
+// 取出第i个元素
 func (pq *inFlightPqueue) Remove(i int) *Message {
 	n := len(*pq)
 	if n-1 != i {
@@ -72,7 +75,7 @@ func (pq *inFlightPqueue) PeekAndShift(max int64) (*Message, int64) {
 func (pq *inFlightPqueue) up(j int) {
 	for {
 		i := (j - 1) / 2 // parent
-		if i == j || (*pq)[j].pri >= (*pq)[i].pri {
+		if i == j || (*pq)[j].pri >= (*pq)[i].pri { // 孩子 >= 父母 的时候退出
 			break
 		}
 		pq.Swap(i, j)
