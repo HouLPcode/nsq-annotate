@@ -12,6 +12,7 @@ import (
 )
 
 // lookupPeer is a low-level type for connecting/reading/writing to nsqlookupd
+// 用来连接，读写 nsqlookup的底层类型
 //
 // A lookupPeer instance is designed to connect lazily to nsqlookupd and reconnect
 // gracefully (i.e. it is all handled by the library).  Clients can simply use the
@@ -20,7 +21,7 @@ type lookupPeer struct {
 	logf            lg.AppLogFunc
 	addr            string
 	conn            net.Conn
-	state           int32
+	state           int32 // 连接状态，已连接，未连接 等等
 	connectCallback func(*lookupPeer)
 	maxBodySize     int64
 	Info            peerInfo
@@ -90,10 +91,12 @@ func (lp *lookupPeer) Close() error {
 // reconnecting in the event of a failure.
 //
 // It returns the response from nsqlookupd as []byte
+// 发生故障自动重连
+// 发送cmd指令给lookup，返回响应的数据
 func (lp *lookupPeer) Command(cmd *nsq.Command) ([]byte, error) {
 	initialState := lp.state
 	if lp.state != stateConnected {
-		err := lp.Connect()
+		err := lp.Connect() //尝试重连
 		if err != nil {
 			return nil, err
 		}

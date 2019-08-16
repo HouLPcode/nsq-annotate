@@ -33,7 +33,8 @@ var okBytes = []byte("OK")
 type protocolV2 struct {
 	ctx *context
 }
-
+// 循环等待客户端发送来的指令，并执行
+// 开启新的goroutine，处理messagePump
 func (p *protocolV2) IOLoop(conn net.Conn) error {
 	var err error
 	var line []byte
@@ -50,7 +51,7 @@ func (p *protocolV2) IOLoop(conn net.Conn) error {
 	// 同步messagePump的启动，以保证它有机会初始化从客户端属性派生的goroutine本地状态，并避免与IDENTIFY的潜在竞争（客户端可能已更改或禁用所述属性）
 	messagePumpStartedChan := make(chan bool) // 这个messagePump 名字很形象, 把要发送给client 的messgae 从 缓存池子里Pump 抽出来 做具体的发送
 	go p.messagePump(client, messagePumpStartedChan)
-	<-messagePumpStartedChan
+	<-messagePumpStartedChan // 阻塞等待messagePump协程启动
 
 	for {
 		if client.HeartbeatInterval > 0 {
@@ -230,7 +231,7 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 
 	// signal to the goroutine that started the messagePump
 	// that we've started up
-	close(startedChan)
+	close(startedChan) // 通知IOLoop，该协程已经启动
 
 	for {
 		if subChannel == nil || !client.IsReadyForMessages() {
@@ -300,7 +301,7 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 			msgTimeout = identifyData.MsgTimeout
 		case <-heartbeatChan:
 			// 服务器定时往客户端发送心跳数据
-			// TODO 客户端超时没有响应是在什么地方？？？？？
+			// TODO 发送失败的时候，这个协程就exit ？？？？
 			err = p.Send(client, frameTypeResponse, heartbeatBytes)
 			if err != nil {
 				goto exit
@@ -324,7 +325,7 @@ func (p *protocolV2) messagePump(client *clientV2, startedChan chan bool) {
 				goto exit
 			}
 			flushed = false
-		case msg := <-memoryMsgChan:
+		case msg := <-memoryMsgChan: //memoryMsgChan->inflight，把消息发送给消费者
 			if sampleRate > 0 && rand.Int31n(100) > sampleRate {
 				continue
 			}

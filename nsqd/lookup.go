@@ -12,6 +12,8 @@ import (
 	"github.com/nsqio/nsq/internal/version"
 )
 
+// Identify
+// 向lookup节点Register 当前nsqd所有的topic和channel
 func connectCallback(n *NSQD, hostname string) func(*lookupPeer) {
 	return func(lp *lookupPeer) {
 		ci := make(map[string]interface{})
@@ -75,6 +77,10 @@ func connectCallback(n *NSQD, hostname string) func(*lookupPeer) {
 	}
 }
 
+// 循环处理与lookup之间的通信
+// 15s一次ping心跳
+// 处理 topic/channel的接入删除
+// 更新 lookuppeers
 func (n *NSQD) lookupLoop() {
 	var lookupPeers []*lookupPeer
 	var lookupAddrs []string
@@ -87,9 +93,10 @@ func (n *NSQD) lookupLoop() {
 	}
 
 	// for announcements, lookupd determines the host automatically
+	// 对于通知，lookup自动确定host
 	ticker := time.Tick(15 * time.Second)
 	for {
-		if connect {
+		if connect { // 获取所有的lookup节点，存储在 NSQD.lookupPeers 中
 			for _, host := range n.getOpts().NSQLookupdTCPAddresses {
 				if in(host, lookupAddrs) {
 					continue
@@ -108,6 +115,7 @@ func (n *NSQD) lookupLoop() {
 		select {
 		case <-ticker:
 			// send a heartbeat and read a response (read detects closed conns)
+			// 每15s向所有lookup节点发送ping心跳，读取响应
 			for _, lookupPeer := range lookupPeers {
 				n.logf(LOG_DEBUG, "LOOKUPD(%s): sending heartbeat", lookupPeer)
 				cmd := nsq.Ping()
@@ -116,13 +124,14 @@ func (n *NSQD) lookupLoop() {
 					n.logf(LOG_ERROR, "LOOKUPD(%s): %s - %s", lookupPeer, cmd, err)
 				}
 			}
-		case val := <-n.notifyChan: // 无缓冲
+		case val := <-n.notifyChan: // 通知所有lookup节点， 有新的topic/channel接入，或者删除已有的topic/channel
 			var cmd *nsq.Command
 			var branch string
 
 			switch val.(type) {
 			case *Channel:
 				// notify all nsqlookupds that a new channel exists, or that it's removed
+				// 通知所有nsqlookupds，有新通道加入，或者删除已有通道
 				branch = "channel"
 				channel := val.(*Channel)
 				if channel.Exiting() == true {
@@ -141,6 +150,7 @@ func (n *NSQD) lookupLoop() {
 				}
 			}
 
+			// 将命令发送给所有lookup节点
 			for _, lookupPeer := range lookupPeers {
 				n.logf(LOG_INFO, "LOOKUPD(%s): %s %s", lookupPeer, branch, cmd)
 				_, err := lookupPeer.Command(cmd)
@@ -148,7 +158,7 @@ func (n *NSQD) lookupLoop() {
 					n.logf(LOG_ERROR, "LOOKUPD(%s): %s - %s", lookupPeer, cmd, err)
 				}
 			}
-		case <-n.optsNotificationChan:
+		case <-n.optsNotificationChan:  // 把不在NSQLookupdTCPAddresses中的loopuppeers删除，相当于更新操作
 			var tmpPeers []*lookupPeer
 			var tmpAddrs []string
 			for _, lp := range lookupPeers {
@@ -171,7 +181,7 @@ func (n *NSQD) lookupLoop() {
 exit:
 	n.logf(LOG_INFO, "LOOKUP: closing")
 }
-
+// lst中包含s ？
 func in(s string, lst []string) bool {
 	for _, v := range lst {
 		if s == v {
@@ -181,6 +191,7 @@ func in(s string, lst []string) bool {
 	return false
 }
 
+// 返回所有 BroadcastAddress:HTTPPort
 func (n *NSQD) lookupdHTTPAddrs() []string {
 	var lookupHTTPAddrs []string
 	lookupPeers := n.lookupPeers.Load()

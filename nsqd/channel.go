@@ -20,7 +20,7 @@ type Consumer interface {
 	UnPause()
 	Pause()
 	Close() error
-	TimedOutMessage()
+	TimedOutMessage() // inflight count --
 	Stats() ClientStats
 	Empty()
 }

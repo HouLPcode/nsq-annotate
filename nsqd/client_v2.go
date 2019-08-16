@@ -14,6 +14,8 @@ import (
 	"github.com/nsqio/nsq/internal/auth"
 )
 
+// 处理客户端连接的信息
+
 const defaultBufferSize = 16 * 1024
 
 const (
@@ -89,7 +91,7 @@ type clientV2 struct {
 	ReadyStateChan chan int
 	ExitChan       chan int
 
-	ClientID string
+	ClientID string //这两个参数都是hostname
 	Hostname string
 
 	SampleRate int32
@@ -150,6 +152,7 @@ func newClientV2(id int64, conn net.Conn, ctx *context) *clientV2 {
 	return c
 }
 
+// returns the remote network address
 func (c *clientV2) String() string {
 	return c.RemoteAddr().String()
 }
@@ -217,7 +220,7 @@ func (c *clientV2) Stats() ClientStats {
 	}
 	c.metaLock.RUnlock()
 	stats := ClientStats{
-		Version:         "V2",
+		Version:         "V2", // 此处的版本直接写死了，应该从version 中获取
 		RemoteAddress:   c.RemoteAddr().String(),
 		ClientID:        clientID,
 		Hostname:        hostname,
@@ -284,6 +287,7 @@ func (p *prettyConnectionState) GetCipherSuite() string {
 	return fmt.Sprintf("Unknown %d", p.CipherSuite)
 }
 
+// 获取tls version
 func (p *prettyConnectionState) GetVersion() string {
 	switch p.Version {
 	case tls.VersionSSL30:
@@ -304,9 +308,9 @@ func (c *clientV2) IsReadyForMessages() bool {
 		return false
 	}
 
+
 	readyCount := atomic.LoadInt64(&c.ReadyCount)
 	inFlightCount := atomic.LoadInt64(&c.InFlightCount)
-
 	c.ctx.nsqd.logf(LOG_DEBUG, "[%s] state rdy: %4d inflt: %4d", c, readyCount, inFlightCount)
 
 	if inFlightCount >= readyCount || readyCount <= 0 {
@@ -326,7 +330,7 @@ func (c *clientV2) tryUpdateReadyState() {
 	// where you cannot the message pump loop would have iterated anyway.
 	// the atomic integer operations guarantee correctness of the value.
 	select {
-	case c.ReadyStateChan <- 1:
+	case c.ReadyStateChan <- 1: // 没啥用，message loop中读取信息后没做任何操作
 	default:
 	}
 }
@@ -342,11 +346,13 @@ func (c *clientV2) Empty() {
 	c.tryUpdateReadyState()
 }
 
+// InFlightCount和MessageCount计数++
 func (c *clientV2) SendingMessage() {
 	atomic.AddInt64(&c.InFlightCount, 1)
 	atomic.AddUint64(&c.MessageCount, 1)
 }
 
+//InFlightCount - 1
 func (c *clientV2) TimedOutMessage() {
 	atomic.AddInt64(&c.InFlightCount, -1)
 	c.tryUpdateReadyState()
@@ -373,6 +379,7 @@ func (c *clientV2) UnPause() {
 	c.tryUpdateReadyState()
 }
 
+// 设置心跳时间，单位秒
 func (c *clientV2) SetHeartbeatInterval(desiredInterval int) error {
 	c.writeLock.Lock()
 	defer c.writeLock.Unlock()
